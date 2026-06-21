@@ -27,6 +27,7 @@ export default function CodeEditor() {
     const [htmlCode, setHTMLCode] = useState("\n<h1>Hello World!</h1>");
     const [cssCode, setCSSCode] = useState("h1 {\n color: royalBlue;\n}");
     const [jsCode, setJSCode] = useState("console.log('Hello Friend!')");
+    const [isConnect, setIsConnect] = useState(false);
   
     const getCurrentCodeVal = () =>{
         if (activeTab == "html") return htmlCode;
@@ -57,8 +58,11 @@ export default function CodeEditor() {
 
         client.onConnect = () => {
             console.log('Connected to Spring Boot WebSockets!')
+            setIsConnect(true);
+            // this is the channel that our client subscribes to
             client.subscribe('/topic/workspace', (message) => {
                 if (message.body) {
+                    // payload: content of the file
                     const payload = JSON.parse(message.body);
                     // flagging the update as coming from the server to prevent sending it back
                     isIncomingUpdateRef.current = true;
@@ -70,9 +74,19 @@ export default function CodeEditor() {
                     // wait 50 ms after user update to flip the update reference back to false
                     // prevents echoes/triggering onchange unnessarily 
                     setTimeout(() => {isIncomingUpdateRef.current = false; }, 50);
+                    
                 }
             });
+            setTimeout(() => {
+                        client.publish({ destination: '/app/get-current-workspace', body: 'html' });
+                        client.publish({ destination: '/app/get-current-workspace', body: 'css' });
+                        client.publish({ destination: '/app/get-current-workspace', body: 'javascript' });
+                    }, 200); 
         };
+        client.onDisconnect = () => {
+            setIsConnect(false);
+        };
+
         // fires off network request and initiate HTTP handshake to endpoint
         // upgrade to live TCP WebSocket connection
         client.activate();
@@ -90,21 +104,7 @@ export default function CodeEditor() {
         if (activeTab === "html") setHTMLCode(code);
         else if (activeTab === "css") setCSSCode(code);
         else if (activeTab === "javascript") setJSCode(code);
-
-        // broadcast this code to server ONLY if
-        // the change came from keyboard typing
-        // using Stomp but no incoming update currently
-        if (stompClientRef.current?.connected && !isIncomingUpdateRef.current) {
-            stompClientRef.current.publish({
-                destination: '/app/update-code',
-                body: JSON.stringify({
-                    type: activeTab,
-                    content: code
-                })
-            });
-        }
     };
-
     
     // --- Local Code Compiling/Debugging ---
     const combinedCode = { htmlCode, cssCode, jsCode};
@@ -116,7 +116,30 @@ export default function CodeEditor() {
         setCompiledSrcDoc(compiled);
     }, [debouncedCode]);
 
-
+     useEffect(() => {
+        if (!isConnect || !stompClientRef.current?.connected) {
+            return;
+        }
+        if (isIncomingUpdateRef.current) {
+            return;
+        }
+        let activeContent = "";
+        if (activeTab === "html") activeContent = debouncedCode.htmlCode;
+        else if (activeTab === "css") activeContent = debouncedCode.cssCode;
+        else activeContent = debouncedCode.jsCode;
+        // broadcast this code to server ONLY if
+        // the change came from keyboard typing
+        // using Stomp but no incoming update currently
+        console.log("websocket update for:", activeTab)
+        stompClientRef.current.publish({
+                destination: '/app/update-code',
+                body: JSON.stringify({
+                    type: activeTab,
+                    content: activeContent
+                })
+            });
+        }, [debouncedCode.htmlCode, debouncedCode.cssCode, debouncedCode.jsCode, isConnect, activeTab]);
+    
     return (
         <div className="flex flex-row gap-4 h-[75vh] w-full bg-[#141414] p-4 rounded-xl">
             {/* LEFT: Code Editor Container */}

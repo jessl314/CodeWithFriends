@@ -20,7 +20,7 @@ empty arrays/structures are truthy in TS/JS -> must check length in this case if
 passing in an empty array [] -> useEffect has no dependencies so it only runs once when the component first mounts/loads on screen
 
 
-./mvnw spring-boot:run to run the backend
+./mvnw spring-boot:run     to run the backend
 
 
 // TEST javascript
