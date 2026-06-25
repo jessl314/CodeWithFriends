@@ -6,7 +6,7 @@ import SockJS from 'sockjs-client';
 import { useDebounce } from "../hooks/useDebounce";
 import { compilerTemplate } from "../utils/compiler";
 
-// language options
+
 type MonacoLanguage = "html" | "css" | "javascript"
 
 // tab model for UI
@@ -29,7 +29,7 @@ export default function CodeEditor() {
     const [jsCode, setJSCode] = useState("console.log('Hello Friend!')");
     const [isConnect, setIsConnect] = useState(false);
   
-    const getCurrentCodeVal = () =>{
+    const getCurrentCodeType = () =>{
         if (activeTab == "html") return htmlCode;
         else if (activeTab == "css") return cssCode;
         else return jsCode;
@@ -159,7 +159,7 @@ export default function CodeEditor() {
                 </div>
                 {/*Monaco Instance for files */}
                 <div className="flex-1 w-full">
-                    <Editor height="100%" theme="vs-dark" language={activeTab} value = {getCurrentCodeVal()} onChange={handleEditorChange} options={{minimap: {enabled: false}, fontSize: 14, automaticLayout: true}}/>
+                    <Editor height="100%" theme="vs-dark" language={activeTab} value = {getCurrentCodeType()} onChange={handleEditorChange} options={{minimap: {enabled: false}, fontSize: 14, automaticLayout: true}}/>
                 </div>
             </div>
             {/*RIGHT: Live iframe Preview */}
