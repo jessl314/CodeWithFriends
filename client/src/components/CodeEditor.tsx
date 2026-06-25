@@ -40,6 +40,17 @@ export default function CodeEditor() {
     // reference to prevent local echo loopback crashes
     const isIncomingUpdateRef = useRef<boolean>(false);
 
+    // reference to track active tab
+    const activeTabRef = useRef<MonacoLanguage>("html");
+
+    useEffect(() => {
+        activeTabRef.current = activeTab;
+    }, [activeTab]);
+
+    // reference to track raw Monaco editor
+    const editorRef = useRef<any>(null);
+
+
     // --- WebSocket Plumbing ---------------
     /* essentially sending a request to change from HTTP to STOMP protocol when the app loads up*/
 
@@ -64,13 +75,24 @@ export default function CodeEditor() {
                 if (message.body) {
                     // payload: content of the file
                     const payload = JSON.parse(message.body);
+
+                    // ignore incoming updates for active tab
+                    if (payload.type === activeTabRef.current) {
+                        return;
+                    }
+
                     // flagging the update as coming from the server to prevent sending it back
                     isIncomingUpdateRef.current = true;
 
-                    if (payload.type === 'html') setHTMLCode(payload.content);
-                    else if (payload.type === 'css') setCSSCode(payload.content);
-                    else if (payload.type === "javascript")
-                    setJSCode(payload.content);
+                    if (payload.type === 'html') {
+                        setHTMLCode((prev) => prev !== payload.content ? payload.content : prev);
+                    }
+                    else if (payload.type === 'css') {
+                        setCSSCode((prev) => prev !== payload.content ? payload.content : prev);
+                    }
+                    else if (payload.type === 'javascript') {
+                        setJSCode((prev) => prev !== payload.content ? payload.content : prev);
+                    }
                     // wait 50 ms after user update to flip the update reference back to false
                     // prevents echoes/triggering onchange unnessarily 
                     setTimeout(() => {isIncomingUpdateRef.current = false; }, 50);
@@ -159,7 +181,22 @@ export default function CodeEditor() {
                 </div>
                 {/*Monaco Instance for files */}
                 <div className="flex-1 w-full">
-                    <Editor height="100%" theme="vs-dark" language={activeTab} value = {getCurrentCodeType()} onChange={handleEditorChange} options={{minimap: {enabled: false}, fontSize: 14, automaticLayout: true}}/>
+                    <Editor height="100%"
+                    language={activeTab === "javascript" ? "javascript" : activeTab}
+                    theme="vs-dark"
+                    path={activeTab} 
+                    onMount={(editor) => {
+                        editorRef.current = editor;
+                        editor.setValue(activeTab === "html" ? htmlCode : activeTab === "css" ? cssCode : jsCode);
+                    }}
+                    onChange={handleEditorChange}
+                    options={{
+                        autoClosingBrackets: "never",  
+                        autoClosingQuotes: "never",   
+                        matchBrackets: "always",
+                        minimap: { enabled: false }
+                    }}
+                    />
                 </div>
             </div>
             {/*RIGHT: Live iframe Preview */}
