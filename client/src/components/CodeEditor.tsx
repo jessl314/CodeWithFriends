@@ -38,9 +38,11 @@ export default function CodeEditor() {
     const stompClientRef = useRef<Client | null>(null);
     // reference to prevent local echo loopback crashes
     const isIncomingUpdateRef = useRef<boolean>(false);
+    // reference to track the editor instance
+    const editorRef = useRef<any>(null);
 
     // --- WebSocket Plumbing ---------------
-    /* essentially sending a request to change from HTTP to STOMP protocol when the app loads up*/
+    /* sending a request to change from HTTP to STOMP protocol when the app loads up*/
 
     useEffect(() => {
         /* Initialize SockJS handshake link which
@@ -85,25 +87,39 @@ export default function CodeEditor() {
         };
     }, []);
 
-    const handleEditorChange = (newVal: string | undefined) => {
-        const code = newVal || "";
-        if (activeTab === "html") setHTMLCode(code);
-        else if (activeTab === "css") setCSSCode(code);
-        else if (activeTab === "javascript") setJSCode(code);
+    const handleEditorMount = (editor: any) => {
+        editorRef.current = editor;
+        editor.onDidChangeModelContent((event: any) => {
+            const code = editor.getValue() || "";
+            if (activeTab === "html") setHTMLCode(code);
+            else if (activeTab === "css") setCSSCode(code);
+            else if (activeTab === "javascript") setJSCode(code);
+            if (isIncomingUpdateRef.current) return;
+            for (const change of event.changes) {
+                const flatIndex: number = change.rangeOffset;
+                const insertedText: string = change.text;
+                //
+                const deletedLength: number = change.rangeLength;
 
-        // broadcast this code to server ONLY if
-        // the change came from keyboard typing
-        // using Stomp but no incoming update currently
-        if (stompClientRef.current?.connected && !isIncomingUpdateRef.current) {
-            stompClientRef.current.publish({
-                destination: '/app/update-code',
-                body: JSON.stringify({
+                const operationPayload = {
                     type: activeTab,
-                    content: code
-                })
-            });
-        }
-    };
+                    index: flatIndex,
+                    actionType: deletedLength > 0 ? "delete": "insert",
+                    text: deletedLength > 0 ? "": insertedText
+                }
+
+                // broadcast this code to server ONLY if
+                // the change came from keyboard typing
+                // using Stomp but no incoming update currently
+                if (stompClientRef.current?.connected && !isIncomingUpdateRef.current) {
+                    stompClientRef.current.publish({
+                        destination: '/app/update-code',
+                        body: JSON.stringify(operationPayload)
+                    });
+                }
+            };
+        }) 
+    }
 
     
     // --- Local Code Compiling/Debugging ---
@@ -136,7 +152,7 @@ export default function CodeEditor() {
                 </div>
                 {/*Monaco Instance for files */}
                 <div className="flex-1 w-full">
-                    <Editor height="100%" theme="vs-dark" language={activeTab} value = {getCurrentCodeVal()} onChange={handleEditorChange} options={{minimap: {enabled: false}, fontSize: 14, automaticLayout: true}}/>
+                    <Editor height="100%" theme="vs-dark" language={activeTab} value = {getCurrentCodeVal()} onMount={handleEditorMount} options={{minimap: {enabled: false}, fontSize: 14, automaticLayout: true}}/>
                 </div>
             </div>
             {/*RIGHT: Live iframe Preview */}
