@@ -9,8 +9,10 @@ public class CodeEditorController {
     
     @MessageMapping("/update-code")
     @SendTo("/topic/workspace")
-    public CodePayload handleCodeUpdate(CodePayload payload) {
-        return payload;
+    public CodePayload handleCodeUpdate(CodePayload incomingOp) {
+        System.out.println("Received micro-delta operation at index: " + incomingOp.getIndex());
+        System.out.println("Action executed: " + incomingOp.getActionType());
+        return incomingOp;
     }
 }
 

@@ -38,57 +38,13 @@ export default function CodeEditor() {
     const stompClientRef = useRef<Client | null>(null);
     // reference to prevent local echo loopback crashes
     const isIncomingUpdateRef = useRef<boolean>(false);
-    // reference to track the editor instance
+    // reference to track the editor and monaco instance
     const editorRef = useRef<any>(null);
-
-    // --- WebSocket Plumbing ---------------
-    /* sending a request to change from HTTP to STOMP protocol when the app loads up*/
-
-    useEffect(() => {
-        /* Initialize SockJS handshake link which
-         points to Spring Boot port */
-        const socket = new SockJS('http://localhost:8080/cwf-edit');
-
-        const client = new Client({
-            webSocketFactory: () => socket,
-            debug: (str) => console.log('[STOMP Debug]:', str),
-            reconnectDelay: 5000,
-            heartbeatIncoming: 4000,
-            heartbeatOutgoing: 4000,
-        });
-
-        client.onConnect = () => {
-            console.log('Connected to Spring Boot WebSockets!')
-            client.subscribe('/topic/workspace', (message) => {
-                if (message.body) {
-                    const payload = JSON.parse(message.body);
-                    // flagging the update as coming from the server to prevent sending it back
-                    isIncomingUpdateRef.current = true;
-
-                    if (payload.type === 'html') setHTMLCode(payload.content);
-                    else if (payload.type === 'css') setCSSCode(payload.content);
-                    else if (payload.type === "javascript")
-                    setJSCode(payload.content);
-                    // wait 50 ms after user update to flip the update reference back to false
-                    // prevents echoes/triggering onchange unnessarily 
-                    setTimeout(() => {isIncomingUpdateRef.current = false; }, 50);
-                }
-            });
-        };
-        // fires off network request and initiate HTTP handshake to endpoint
-        // upgrade to live TCP WebSocket connection
-        client.activate();
-        stompClientRef.current = client;
-
-        return () => {
-            if (stompClientRef.current) {
-                stompClientRef.current.deactivate();
-            }
-        };
-    }, []);
-
-    const handleEditorMount = (editor: any) => {
+    const monacoRef = useRef<any>(null);
+    const handleEditorMount = (editor: any, monaco: any) => {
         editorRef.current = editor;
+        monacoRef.current = monaco;
+        
         editor.onDidChangeModelContent((event: any) => {
             const code = editor.getValue() || "";
             if (activeTab === "html") setHTMLCode(code);
@@ -121,6 +77,97 @@ export default function CodeEditor() {
         }) 
     }
 
+    // --- WebSocket Plumbing ---------------
+    /* sending a request to change from HTTP to STOMP protocol when the app loads up*/
+
+    useEffect(() => {
+        /* Initialize SockJS handshake link which
+         points to Spring Boot port */
+        const socket = new SockJS('http://localhost:8080/cwf-edit');
+
+        const client = new Client({
+            webSocketFactory: () => socket,
+            debug: (str) => console.log('[STOMP Debug]:', str),
+            reconnectDelay: 5000,
+            heartbeatIncoming: 4000,
+            heartbeatOutgoing: 4000,
+        });
+
+        client.onConnect = () => {
+            console.log('Connected to Spring Boot WebSockets!')
+            client.subscribe('/topic/workspace', (message) => {
+                if (message.body) {
+                    const payload = JSON.parse(message.body);
+
+                // activeTab does not match file type of operation, update the operation file's string storage
+                if (payload.type !== activeTab) {
+                    if (payload.type === 'html') setHTMLCode((prev) => applySimplePayloadToString(prev, payload));
+                    else if (payload.type === 'css') setCSSCode((prev) => applySimplePayloadToString(prev, payload));
+                    else if (payload.type === 'javascript') setJSCode((prev) => applySimplePayloadToString(prev, payload));
+                    return;
+                }
+                
+                if (editorRef.current) {
+                    const model = editorRef.current.getModel();
+
+                    // flagging the update as coming from the server to prevent sending it back
+                    isIncomingUpdateRef.current = true;
+
+                    // specify where the edit should occur with Monaco range
+                    const startPosition = model.getPositionAt(payload.index)
+
+                    const endPosition = payload.actionType === "delete" ? model.getPositionAt(payload.index + 1) : startPosition;
+                    // assume single character deletions for now
+
+                    const range = new monacoRef.current.Range(
+                        startPosition.lineNumber,
+                        startPosition.column,
+                        endPosition.lineNumber,
+                        endPosition.column
+                    );
+
+                    // execute the edit on UI
+                    editorRef.current.executeEdits("remote-sync", [{
+                        range: range,
+                        text: payload.actionType === "insert" ? payload.text : "",
+                        forceMoveMarkers: true 
+                    }]);
+                    
+                    // synchronize React code state with Monaco edited string
+                    if (payload.type === 'html') setHTMLCode(payload.content);
+                    else if (payload.type === 'css') setCSSCode(payload.content);
+                    else if (payload.type === "javascript")
+                    setJSCode(payload.content);
+                    // wait 50 ms after user update to flip the update reference back to false
+                    // prevents echoes/triggering onchange unnessarily 
+                    setTimeout(() => {isIncomingUpdateRef.current = false; }, 50);
+
+                }
+                    
+                }
+            });
+        };
+        // fires off network request and initiate HTTP handshake to endpoint
+        // upgrade to live TCP WebSocket connection
+        client.activate();
+        stompClientRef.current = client;
+
+        return () => {
+            if (stompClientRef.current) {
+                stompClientRef.current.deactivate();
+            }
+        };
+    }, []);
+
+    function applySimplePayloadToString(currentText: string, payload: any): string {
+        if (payload.actionType === "insert") {
+        return currentText.slice(0, payload.index) + payload.text + currentText.slice(payload.index);
+        } else {
+            return currentText.slice(0, payload.index) + currentText.slice(payload.index + 1);
+        }
+    }
+
+    
     
     // --- Local Code Compiling/Debugging ---
     const combinedCode = { htmlCode, cssCode, jsCode};
