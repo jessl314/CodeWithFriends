@@ -8,6 +8,7 @@ import EditorPane, {
     type MonacoLanguage,
     type WorkspaceFile,
 } from "./EditorPane";
+import { applyOp, type TextOp } from "../types/ops";
 
 const INITIAL_FILES: WorkspaceFile[] = [
     {
@@ -41,13 +42,31 @@ export default function CodeEditor() {
     const [files, setFiles] = useState<WorkspaceFile[]>(INITIAL_FILES);
     const [activeFileId, setActiveFileId] = useState(INITIAL_FILES[0].id);
 
-    // reference to keep track of STOMP client across renders
     const stompClientRef = useRef<Client | null>(null);
-    // reference to prevent local echo loopback crashes
-    const isIncomingUpdateRef = useRef<boolean>(false);
-    // one Monaco instance per file so remote ops can target background tabs
+    const clientIdRef = useRef(crypto.randomUUID());
+    const isIncomingUpdateRef = useRef(false);
+    const filesRef = useRef(files);
+    filesRef.current = files;
+
     const editorRefs = useRef<Record<string, any>>({});
     const monacoRef = useRef<any>(null);
+
+    const updateFileContent = (fileId: string, content: string) => {
+        setFiles((prev) => {
+            const current = prev.find((file) => file.id === fileId);
+            if (current?.content === content) return prev;
+            return prev.map((file) => (file.id === fileId ? { ...file, content } : file));
+        });
+    };
+
+    const publishOp = (op: TextOp) => {
+        if (isIncomingUpdateRef.current) return;
+        if (!stompClientRef.current?.connected) return;
+        stompClientRef.current.publish({
+            destination: "/app/update-code",
+            body: JSON.stringify(op),
+        });
+    };
 
     const handleEditorMount = (fileId: string) => (editor: any, monaco: any) => {
         editorRefs.current[fileId] = editor;
@@ -55,42 +74,49 @@ export default function CodeEditor() {
 
         editor.onDidChangeModelContent((event: any) => {
             if (isIncomingUpdateRef.current) return;
+            // React `value` updates call setValue, which is a flush — not a keystroke
+            if (event.isFlush) return;
+
             for (const change of event.changes) {
-                const flatIndex: number = change.rangeOffset;
+                const index: number = change.rangeOffset;
                 const insertedText: string = change.text;
                 const deletedLength: number = change.rangeLength;
 
-                const operationPayload = {
-                    type: fileId,
-                    index: flatIndex,
-                    actionType: deletedLength > 0 ? "delete" : "insert",
-                    text: deletedLength > 0 ? "" : insertedText,
-                };
-
-                // broadcast this code to server ONLY if
-                // the change came from keyboard typing
-                if (stompClientRef.current?.connected && !isIncomingUpdateRef.current) {
-                    stompClientRef.current.publish({
-                        destination: "/app/update-code",
-                        body: JSON.stringify(operationPayload),
+                if (deletedLength > 0) {
+                    publishOp({
+                        kind: "delete",
+                        type: fileId,
+                        index,
+                        length: deletedLength,
+                        senderId: clientIdRef.current,
+                    });
+                }
+                if (insertedText) {
+                    publishOp({
+                        kind: "insert",
+                        type: fileId,
+                        index,
+                        text: insertedText,
+                        senderId: clientIdRef.current,
                     });
                 }
             }
         });
     };
 
-    const updateFileContent = (fileId: string, content: string) => {
-        setFiles((prev) =>
-            prev.map((file) => (file.id === fileId ? { ...file, content } : file))
-        );
+    const applyRemoteOp = (op: TextOp) => {
+        if (op.kind !== "insert" && op.kind !== "delete") return;
+
+        isIncomingUpdateRef.current = true;
+        const current =
+            filesRef.current.find((file) => file.id === op.type)?.content ?? "";
+        updateFileContent(op.type, applyOp(current, op));
+        setTimeout(() => {
+            isIncomingUpdateRef.current = false;
+        }, 50);
     };
 
-    // --- WebSocket Plumbing ---------------
-    /* sending a request to change from HTTP to STOMP protocol when the app loads up*/
-
     useEffect(() => {
-        /* Initialize SockJS handshake link which
-         points to Spring Boot port */
         const socket = new SockJS("http://localhost:8080/cwf-edit");
 
         const client = new Client({
@@ -104,50 +130,13 @@ export default function CodeEditor() {
         client.onConnect = () => {
             console.log("Connected to Spring Boot WebSockets!");
             client.subscribe("/topic/workspace", (message) => {
-                if (message.body) {
-                    const payload = JSON.parse(message.body);
-                    const editor = editorRefs.current[payload.type];
-
-                    if (!editor || !monacoRef.current) return;
-
-                    const model = editor.getModel();
-
-                    // flagging the update as coming from the server to prevent sending it back
-                    isIncomingUpdateRef.current = true;
-
-                    // specify where the edit should occur with Monaco range
-                    const startPosition = model.getPositionAt(payload.index);
-
-                    const endPosition =
-                        payload.actionType === "delete"
-                            ? model.getPositionAt(payload.index + 1)
-                            : startPosition;
-                    // assume single character deletions for now
-
-                    const range = new monacoRef.current.Range(
-                        startPosition.lineNumber,
-                        startPosition.column,
-                        endPosition.lineNumber,
-                        endPosition.column
-                    );
-
-                    // execute the edit on UI
-                    editor.executeEdits("remote-sync", [
-                        {
-                            range: range,
-                            text: payload.actionType === "insert" ? payload.text : "",
-                            forceMoveMarkers: true,
-                        },
-                    ]);
-
-                    setTimeout(() => {
-                        isIncomingUpdateRef.current = false;
-                    }, 50);
-                }
+                if (!message.body) return;
+                const op: TextOp = JSON.parse(message.body);
+                if (op.senderId === clientIdRef.current) return;
+                applyRemoteOp(op);
             });
         };
-        // fires off network request and initiate HTTP handshake to endpoint
-        // upgrade to live TCP WebSocket connection
+
         client.activate();
         stompClientRef.current = client;
 
@@ -158,27 +147,22 @@ export default function CodeEditor() {
         };
     }, []);
 
-    // --- Local Code Compiling/Debugging ---
-    const combinedCode = {
-        htmlCode: joinByLanguage(files, "html"),
-        cssCode: joinByLanguage(files, "css"),
-        jsCode: joinByLanguage(files, "javascript"),
-    };
-    const debouncedCode = useDebounce(combinedCode, 300);
-    const [compiledSrcDoc, setCompiledSrcDoc] = useState("");
+    const htmlCode = joinByLanguage(files, "html");
+    const cssCode = joinByLanguage(files, "css");
+    const jsCode = joinByLanguage(files, "javascript");
+    const debouncedHtml = useDebounce(htmlCode, 300);
+    const debouncedCss = useDebounce(cssCode, 300);
+    const debouncedJs = useDebounce(jsCode, 300);
+    const [compiledSrcDoc, setCompiledSrcDoc] = useState(() =>
+        compilerTemplate(htmlCode, cssCode, jsCode)
+    );
 
     useEffect(() => {
-        const compiled = compilerTemplate(
-            debouncedCode.htmlCode,
-            debouncedCode.cssCode,
-            debouncedCode.jsCode
-        );
-        setCompiledSrcDoc(compiled);
-    }, [debouncedCode]);
+        setCompiledSrcDoc(compilerTemplate(debouncedHtml, debouncedCss, debouncedJs));
+    }, [debouncedHtml, debouncedCss, debouncedJs]);
 
     return (
         <div className="flex flex-row gap-4 h-[75vh] w-full min-h-0 bg-[#141414] p-4 rounded-xl">
-            {/* LEFT: tabbed code editor */}
             <div className="flex flex-col h-full w-1/2 min-h-0 bg-[#1e1e1e] rounded-lg overflow-hidden border border-neutral-800">
                 <div className="flex shrink-0 overflow-x-auto bg-[#181818] border-b border-neutral-800 p-2 gap-1">
                     {files.map((file) => {
@@ -210,22 +194,22 @@ export default function CodeEditor() {
                             <EditorPane
                                 language={file.language}
                                 value={file.content}
-                                onChange={(value) =>
-                                    updateFileContent(file.id, value ?? "")
-                                }
+                                onChange={(value) => {
+                                    if (value === undefined) return;
+                                    updateFileContent(file.id, value);
+                                }}
                                 onMount={handleEditorMount(file.id)}
                             />
                         </div>
                     ))}
                 </div>
             </div>
-            {/* RIGHT: Live iframe Preview */}
-            <div className="w-1/2 h-full min-h-0 bg-white rounded-lg overflow-hidden border border-neutral-800 shadow-2xl">
+            <div className="relative w-1/2 h-full min-h-0 bg-white rounded-lg overflow-hidden border border-neutral-800 shadow-2xl">
                 <iframe
                     title="Live Preview"
                     srcDoc={compiledSrcDoc}
                     sandbox="allow-scripts"
-                    className="w-full h-full bg-white"
+                    className="absolute inset-0 h-full w-full border-0 bg-white"
                 />
             </div>
         </div>

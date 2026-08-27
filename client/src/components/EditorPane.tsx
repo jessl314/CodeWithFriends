@@ -13,7 +13,7 @@ interface EditorPaneProps {
     language: MonacoLanguage;
     value: string;
     onChange: OnChange;
-    onMount: OnMount;
+    onMount?: OnMount;
 }
 
 export default function EditorPane({
