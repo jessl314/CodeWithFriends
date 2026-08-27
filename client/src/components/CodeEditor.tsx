@@ -127,6 +127,24 @@ export default function CodeEditor() {
             heartbeatOutgoing: 4000,
         });
 
+        const hydrateFromSnapshot = ( snapshot : {
+            html: string;
+            css: string;
+            javascript: string;
+        }) => {
+            isIncomingUpdateRef.current = true;
+            setFiles((prev) => 
+                prev.map((file) => ({
+                ...file,
+                content: snapshot[file.id as "html" | "css" | "javascript"]
+
+                }))
+            );
+            setTimeout(() => {
+                isIncomingUpdateRef.current = false;
+            }, 50);
+        };
+
         client.onConnect = () => {
             console.log("Connected to Spring Boot WebSockets!");
             client.subscribe("/topic/workspace", (message) => {
@@ -137,13 +155,30 @@ export default function CodeEditor() {
             });
         };
 
-        client.activate();
-        stompClientRef.current = client;
+        let cancelled = false;
+
+        (async () => {
+            try {
+                const res = await fetch("http://localhost:8080/api/workspace");
+                if (res.ok && !cancelled) {
+                    hydrateFromSnapshot(await res.json());
+                }
+            } catch {
+                // keep INITIAL_FILES
+            }
+            if (!cancelled) {
+                client.activate();
+                stompClientRef.current = client;
+            }
+        })();
+
 
         return () => {
             if (stompClientRef.current) {
                 stompClientRef.current.deactivate();
             }
+            cancelled = true;
+            client.deactivate();
         };
     }, []);
 
