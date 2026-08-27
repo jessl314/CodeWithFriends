@@ -16,6 +16,12 @@ export type DeleteOp = {
 
 export type TextOp = InsertOp | DeleteOp;
 
+ /**
+  * apply insert or delete operation to the content requested. keep tab editor in sync, runs in browser
+  * @param content file content as a string
+  * @param op operation object to be applied to content
+  * @return updated full content
+*/
 export function applyOp(content: string, op: TextOp): string {
     if (op.kind === "insert") {
         return content.slice(0, op.index) + op.text + content.slice(op.index);

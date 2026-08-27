@@ -4,7 +4,6 @@ import com.codewithfriends.dto.TextOp;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
-import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 
 // Spring Data Redis Imports 
@@ -13,9 +12,23 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 @Controller
 public class CodeEditorController {
 
+    private static final String KEY_PREFIX = "workspace:";
+    private final StringRedisTemplate redis;
+
+    public CodeEditorController(StringRedisTemplate redis) {
+        this.redis = redis;
+    }
+
     @MessageMapping("/update-code")
     @SendTo("/topic/workspace")
     public TextOp handleCodeUpdate(TextOp incomingOp) {
+        String key = KEY_PREFIX + incomingOp.getType()
+        // based on the workspace:file get the full file string
+        String current = redis.opsForValue().get(key);
+        if (current == null) {
+            current = defaultFor(incomingOp.getType());
+        }
+        redis.opsForValue().set(key, applyOp(current, incomingOp));
         return incomingOp;
     }
 
