@@ -7,7 +7,7 @@ import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 /*
-message broker translates, routes and distributes messages betweeen different applications or services
+    message broker translates, routes and distributes messages betweeen different applications or services
 
 -> achieves decoupling in a Publisher/Subscriber architecture so the sender (Pub) does not need to know who is recieving the message, how many, or where they are located. The receiver (Sub) tells the broker what data they are intereted in to later send to the Pub
 
