@@ -5,6 +5,7 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
+import com.codewithfriends.util.WorkspaceDefaults;
 
 // cross origin required so vite (port 5174/5173) can fetch port 8080
 @RestController
@@ -28,7 +29,7 @@ public class WorkspaceController {
     }
 
     private String read(String type) {
-        String stored = redis.opsForValue.get(KEY_PREFIX + type);
-        return stored != null ? stored : defaultFor(type);
+        String stored = redis.opsForValue().get(KEY_PREFIX + type);
+        return stored != null ? stored : WorkspaceDefaults.forType(type);
     }
 }

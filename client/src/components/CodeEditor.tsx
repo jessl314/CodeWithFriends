@@ -136,7 +136,7 @@ export default function CodeEditor() {
             setFiles((prev) => 
                 prev.map((file) => ({
                 ...file,
-                content: snapshot[file.id as "html" | "css" | "javascript"]
+                content: snapshot[file.id as "html" | "css" | "javascript"] ?? file.content
 
                 }))
             );

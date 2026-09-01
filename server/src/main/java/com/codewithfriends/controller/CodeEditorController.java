@@ -1,6 +1,7 @@
 package com.codewithfriends.controller;
 
 import com.codewithfriends.dto.TextOp;
+import com.codewithfriends.util.WorkspaceDefaults;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.handler.annotation.SendTo;
 import org.springframework.stereotype.Controller;
@@ -25,7 +26,7 @@ public class CodeEditorController {
     @MessageMapping("/update-code")
     @SendTo("/topic/workspace")
     public TextOp handleCodeUpdate(TextOp incomingOp) {
-        String key = KEY_PREFIX + incomingOp.getType()
+        String key = KEY_PREFIX + incomingOp.getType();
         // based on the workspace:file get the full file string
         String current = redis.opsForValue().get(key);
         if (current == null) {
