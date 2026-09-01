@@ -8,6 +8,8 @@ public class WorkspaceSnapshot {
     private String css;
     private String javascript;
 
+    public WorkspaceSnapshot() {}
+
     public WorkspaceSnapshot(String html, String css, String javascript) {
         this.html = html;
         this.css = css;
@@ -18,7 +20,7 @@ public class WorkspaceSnapshot {
     public void setHtml(String html) { this.html = html; }
     public String getCss() { return css; }
     public void setCss(String css) { this.css = css; }
-    public String getJs() { return javascript; }
-    public void setJs(String javascript) { this.javascript = javascript; }
+    public String getJavascript() { return javascript; }
+    public void setJavascript(String javascript) { this.javascript = javascript; }
 
 }

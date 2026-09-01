@@ -1,3 +1,4 @@
+package com.codewithfriends.util;
 public final class WorkspaceDefaults {
     private WorkspaceDefaults() {}
 
