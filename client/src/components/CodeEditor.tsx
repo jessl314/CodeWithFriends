@@ -41,6 +41,7 @@ function joinByLanguage(files: WorkspaceFile[], language: MonacoLanguage) {
 export default function CodeEditor() {
     const [files, setFiles] = useState<WorkspaceFile[]>(INITIAL_FILES);
     const [activeFileId, setActiveFileId] = useState(INITIAL_FILES[0].id);
+    const [hydrated, setHydrated] = useState(false);
 
     const stompClientRef = useRef<Client | null>(null);
     const clientIdRef = useRef(crypto.randomUUID());
@@ -127,6 +128,24 @@ export default function CodeEditor() {
             heartbeatOutgoing: 4000,
         });
 
+        const hydrateFromSnapshot = ( snapshot : {
+            html: string;
+            css: string;
+            javascript: string;
+        }) => {
+            isIncomingUpdateRef.current = true;
+            setFiles((prev) => 
+                prev.map((file) => ({
+                ...file,
+                content: snapshot[file.id as "html" | "css" | "javascript"] ?? file.content
+
+                }))
+            );
+            setTimeout(() => {
+                isIncomingUpdateRef.current = false;
+            }, 50);
+        };
+
         client.onConnect = () => {
             console.log("Connected to Spring Boot WebSockets!");
             client.subscribe("/topic/workspace", (message) => {
@@ -135,15 +154,34 @@ export default function CodeEditor() {
                 if (op.senderId === clientIdRef.current) return;
                 applyRemoteOp(op);
             });
+            setHydrated(true);
         };
 
-        client.activate();
-        stompClientRef.current = client;
+        let cancelled = false;
+
+        (async () => {
+            try {
+                const res = await fetch("http://localhost:8080/api/workspace");
+                if (res.ok && !cancelled) {
+                    hydrateFromSnapshot(await res.json());
+                }
+            } catch {
+                // keep INITIAL_FILES
+            }
+            if (!cancelled) {
+                setHydrated(true);
+                client.activate();
+                stompClientRef.current = client;
+            }
+        })();
+
 
         return () => {
             if (stompClientRef.current) {
                 stompClientRef.current.deactivate();
             }
+            cancelled = true;
+            client.deactivate();
         };
     }, []);
 
@@ -153,13 +191,13 @@ export default function CodeEditor() {
     const debouncedHtml = useDebounce(htmlCode, 300);
     const debouncedCss = useDebounce(cssCode, 300);
     const debouncedJs = useDebounce(jsCode, 300);
-    const [compiledSrcDoc, setCompiledSrcDoc] = useState(() =>
-        compilerTemplate(htmlCode, cssCode, jsCode)
-    );
+    const [compiledSrcDoc, setCompiledSrcDoc] = useState("");
 
     useEffect(() => {
+        if (!hydrated) return;
+        if (debouncedHtml !== htmlCode || debouncedCss !== cssCode || debouncedJs !== jsCode) { return; }
         setCompiledSrcDoc(compilerTemplate(debouncedHtml, debouncedCss, debouncedJs));
-    }, [debouncedHtml, debouncedCss, debouncedJs]);
+    }, [hydrated, htmlCode, cssCode, jsCode, debouncedHtml, debouncedCss, debouncedJs]);
 
     return (
         <div className="flex flex-row gap-4 h-[75vh] w-full min-h-0 bg-[#141414] p-4 rounded-xl">
@@ -184,33 +222,45 @@ export default function CodeEditor() {
                     })}
                 </div>
                 <div className="relative flex-1 min-h-0">
-                    {files.map((file) => (
-                        <div
-                            key={file.id}
-                            className={`absolute inset-0 ${
-                                file.id === activeFileId ? "z-10" : "invisible z-0"
-                            }`}
-                        >
-                            <EditorPane
-                                language={file.language}
-                                value={file.content}
-                                onChange={(value) => {
-                                    if (value === undefined) return;
-                                    updateFileContent(file.id, value);
-                                }}
-                                onMount={handleEditorMount(file.id)}
-                            />
+                    {!hydrated ? (
+                        <div className="flex h-full items-center justify-center text-sm text-neutral-500">
+                            Loading workspace…
                         </div>
-                    ))}
-                </div>
+                    ) : (
+                        files.map((file) => (
+                            <div
+                                key={file.id}
+                                className={`absolute inset-0 ${
+                                    file.id === activeFileId ? "z-10" : "invisible z-0"
+                                }`}
+                            >
+                                <EditorPane
+                                    language={file.language}
+                                    value={file.content}
+                                    onChange={(value) => {
+                                        if (value === undefined) return;
+                                        updateFileContent(file.id, value);
+                                    }}
+                                    onMount={handleEditorMount(file.id)}
+                                />
+                            </div>
+                        ))
+                    )}
+                </div> 
             </div>
             <div className="relative w-1/2 h-full min-h-0 bg-white rounded-lg overflow-hidden border border-neutral-800 shadow-2xl">
-                <iframe
-                    title="Live Preview"
-                    srcDoc={compiledSrcDoc}
-                    sandbox="allow-scripts"
-                    className="absolute inset-0 h-full w-full border-0 bg-white"
-                />
+                {!hydrated || compiledSrcDoc === "" ? (
+                    <div className="flex h-full items-center justify-center text-sm text-neutral-500 bg-[#141414]">
+                        Loading workspace…
+                    </div>
+                ) : (
+                    <iframe
+                        title="Live Preview"
+                        srcDoc={compiledSrcDoc}
+                        sandbox="allow-scripts"
+                        className="absolute inset-0 h-full w-full border-0 bg-white"
+                    />
+                )}
             </div>
         </div>
     );

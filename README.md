@@ -1,10 +1,6 @@
 # CodeWithFriends
 
 
-
-
-
-
 ### How to Run (Development)
 
 frontend:
@@ -17,3 +13,19 @@ cd server
 
 to test multiple tabs copy localhost url in multiple tabs:
 http://localhost:5174/
+
+
+# run redis locally
+
+run this from root after starting docker desktop
+
+docker start cwf-redis 
+OR docker rm -f cwf-redis
+
+docker run --name cwf-redis -p 6379:6379 -d redis
+
+# wire up everything in docker
+
+to run locally in docker (first start docker desktop) : 
+
+docker compose up

@@ -20,7 +20,7 @@ empty arrays/structures are truthy in TS/JS -> must check length in this case if
 passing in an empty array [] -> useEffect has no dependencies so it only runs once when the component first mounts/loads on screen
 
 
-./mvnw spring-boot:run to run the backend
+./mvnw spring-boot:run     to run the backend
 
 
 // TEST javascript
@@ -34,3 +34,16 @@ killer network service in services disabled for docker
 
 
 to install on future projects redis: docker run --name cwf-redis -p 6379:6379 -d redis
+
+
+feat: A brand new feature for the application (e.g., feat: add user authentication).
+
+fix: A bug fix (e.g., fix: resolve token expiration memory leak).
+
+docs: Changes entirely restricted to documentation, like the README.md.
+
+refactor: Rewriting or optimizing code without changing its external behavior or adding features (e.g., modularizing a massive component).
+
+test: Adding missing tests or correcting existing test suites.
+
+chore: Updating build scripts, dependencies, or configuration files (like tweaking a .gitignore).
