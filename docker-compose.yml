@@ -1,0 +1,41 @@
+services:
+  # 1. The Redis In-Memory Shared Notepad
+  redis:
+    image: redis:alpine
+    container_name: cwf-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - cwf-network
+
+  # 2. The Spring Boot Backend Application
+  server:
+    build: ./server
+    container_name: cwf-server
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis  
+      - SPRING_DATA_REDIS_PORT=6379
+    networks:
+      - cwf-network
+
+  # 3. The React Frontend Application
+  client:
+    build: ./client
+    container_name: cwf-client
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./client:/app
+      - /app/node_modules 
+    depends_on:
+      - server
+    networks:
+      - cwf-network
+
+networks:
+  cwf-network:
+    driver: bridge

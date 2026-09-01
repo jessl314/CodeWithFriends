@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import CodeEditor from './components/CodeEditor.tsx'
 import './App.css'
 
